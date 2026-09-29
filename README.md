@@ -13,9 +13,8 @@
 
 - [Features](#features)
 - [Installation](#installation)
-  - [Prerequisites](#prerequisites)
+  - [Using `conda` / `mamba` (Recommended)](#using-conda--mamba-recommended)
   - [Using `pip`](#using-pip)
-  - [Using `conda` / `mamba`](#using-conda--mamba)
 - [Quick Start](#quick-start)
 - [Command-Line Options](#command-line-options)
 - [Input Data Format](#input-data-format)
@@ -39,19 +38,47 @@
 
 ## Installation
 
-### Prerequisites
+First, clone this repository:
 
-- Python 3.9 or higher.
+```bash
+git clone https://github.com/till-schertenleib/pdf-nmf.git
+cd pdf-nmf
+```
+
+### Using `conda` / `mamba` (Recommended)
+
+Using **Conda** or **Mamba** (e.g. Miniforge or Anaconda) is strongly recommended for crystallography and DiffPy workflows, as C-libraries and dependencies like `diffpy.utils` are maintained on `conda-forge`.
+
+#### Option A: Quick setup with `environment.yml`
+```bash
+# Create the environment with all dependencies pre-configured
+conda env create -f environment.yml
+
+# Activate the environment
+conda activate pdf-nmf
+```
+*(If using `mamba`, substitute `mamba env create -f environment.yml`)*
+
+#### Option B: Manual step-by-step setup
+```bash
+# 1. Create and activate a new environment
+conda create -n pdf-nmf python=3.10
+conda activate pdf-nmf
+
+# 2. Install scientific packages from conda-forge
+conda install -c conda-forge diffpy.utils scikit-learn matplotlib numpy
+
+# 3. Install pdf-nmf in editable mode
+pip install -e .
+```
+
+---
 
 ### Using `pip`
 
-1. **Clone this repository:**
-   ```bash
-   git clone https://github.com/till-schertenleib/pdf-nmf.git
-   cd pdf-nmf
-   ```
+If you prefer standard `pip` without Conda (requires Python 3.9+):
 
-2. *(Recommended)* **Create and activate a virtual environment:**
+1. **Create and activate a virtual environment:**
    - **Linux / macOS:**
      ```bash
      python3 -m venv .venv
@@ -63,22 +90,11 @@
      .venv\Scripts\activate
      ```
 
-3. **Install the package:**
+2. **Install the package:**
    ```bash
    pip install -e .
    ```
    *(Alternatively, install requirements directly: `pip install -r requirements.txt`)*
-
-### Using `conda` / `mamba`
-
-If you work within an Anaconda or Miniforge environment (common for DiffPy workflows):
-
-```bash
-conda create -n pdf-nmf python=3.10
-conda activate pdf-nmf
-conda install -c conda-forge diffpy.utils scikit-learn matplotlib numpy
-pip install -e .
-```
 
 ---
 
