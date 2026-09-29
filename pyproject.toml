@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pdf-nmf"
+version = "0.1.0"
+description = "Non-negative matrix factorization (NMF) for pair distribution function (PDF) analysis"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+    { name = "Till Schertenleib" },
+]
+keywords = [
+    "pair-distribution-function",
+    "total-scattering",
+    "crystallography",
+    "non-negative-matrix-factorization",
+    "nmf",
+    "diffpy",
+    "materials-science",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "numpy>=1.20.0",
+    "matplotlib>=3.3.0",
+    "scikit-learn>=1.0.0",
+    "diffpy.utils>=3.0.0",
+]
+
+[project.scripts]
+pdf-nmf = "nmf:main"
+
+[project.urls]
+Homepage = "https://github.com/till-schertenleib/pdf-nmf"
+Repository = "https://github.com/till-schertenleib/pdf-nmf"
+"Bug Tracker" = "https://github.com/till-schertenleib/pdf-nmf/issues"
+
+[tool.setuptools]
+py-modules = ["nmf"]
