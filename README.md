@@ -5,7 +5,7 @@
 
 **Non-Negative Matrix Factorization (NMF) for Pair Distribution Function (PDF) Analysis.**
 
-`pdf-nmf` is a Python tool for decomposing series of total-scattering atomic pair distribution functions ($G(r)$) into constituent chemical or structural components and their relative fractional weights across samples. It implements the methodology described in [Liu et al. (2021)](#references) and serves as an accessible standalone implementation.
+`pdf-nmf` is a Python tool for decomposing series of total-scattering atomic pair distribution functions ($G(r)$) into constituent chemical or structural components and their relative fractional weights across samples. It builds upon the methodology described in [Liu et al. (2021)](#scientific-background--references), with enhanced baseline removal, scale ambiguity resolution, and stability checks.
 
 ---
 
@@ -19,7 +19,8 @@
 - [Command-Line Options](#command-line-options)
 - [Input Data Format](#input-data-format)
 - [Output Structure](#output-structure)
-  - [Mathematical Note on Shifts & Weights](#mathematical-note-on-shifts--weights)
+- [Mathematical Framework (v2 Scaling & Interpretation)](#mathematical-framework-v2-scaling--interpretation)
+- [Synthetic Mixture Validation](#synthetic-mixture-validation)
 - [Scientific Background & References](#scientific-background--references)
 - [License](#license)
 
@@ -27,18 +28,20 @@
 
 ## Features
 
-- **Automatic Baseline Shift Handling**: NMF requires strictly non-negative data ($V \ge 0$). Since PDF $G(r)$ typically oscillates around zero and has negative values, `pdf-nmf` automatically determines the minimum baseline across your series and applies the necessary positive shift before factorization.
-- **Systematic Model Selection**: Evaluates 1 through $N$ components (`--max_comp`) and tracks the Frobenius reconstruction error to help identify the optimal number of physical components.
-- **Component Export**: Saves each extracted constituent component as a standard two-column `.cgr` file ($r$ vs. $G(r)$), ready to be loaded into PDFgui, DiffPy-CMI, or plotting tools.
-- **Publication-Ready LaTeX Tables**: Generates compilable LaTeX tables containing sample names, overall scale factors, and fractional weights normalized to sum to 1.
-- **Rietveld-Style Diagnostic Plots**: Produces data vs. fit vs. difference curves for each sample and component count.
-- **Overview Visualizations**: Outputs a dual-panel figure showing both the reconstruction error curve and vertically offset component spectra.
+- **Automatic Baseline Shift Handling**: NMF requires non-negative data ($V \ge 0$). Because experimental $G(r)$ oscillates around zero, `pdf-nmf` shifts the dataset non-negatively prior to factorization.
+- **Resolution of NMF Scale Ambiguity (v2)**: Standard NMF is invariant to scalar rescalings $W_{ik} H_{kj} = (W_{ik} s_k)(H_{kj} / s_k)$, making raw weights incomparable across components. `pdf-nmf` removes the artificial baseline offset each component inherits from the global shift and normalises components (unit $L_2$ norm by default).
+- **Physical Signal-Share Weights**: Provides absolute weights $A_{ik}$ and normalized signal fractions $f_{ik} = A_{ik} / \sum_k A_{ik}$ that directly reflect each component's share of the PDF signal.
+- **Initialisation Stability Testing**: Refit models over $N$ random initial starts (`--seeds N`) with Hungarian assignment matching to assess component stability and calculate standard deviations.
+- **Systematic Model Selection**: Evaluates 1 through $N$ components (`--max_comp`) tracking both Frobenius error and relative reconstruction errors ($\|G - G_{\text{NMF}}\| / \|G\|$).
+- **Dual Component Export**: Saves both raw shifted components (`component_k.cgr`) and baseline-subtracted normalised components (`component_k_norm_{norm}.cgr`).
+- **Comprehensive Tables**: Exports detailed machine-readable CSV tables containing raw weights, absolute weights, signal fractions for all normalisations, and sample offsets, alongside publication-ready LaTeX tables.
+- **Diagnostic & Overview Plots**: Generates Rietveld-style data vs. reconstruction difference plots for each sample, as well as dual-panel summary overviews.
 
 ---
 
 ## Installation
 
-First, clone this repository:
+Clone this repository:
 
 ```bash
 git clone https://github.com/till-schertenleib/pdf-nmf.git
@@ -47,28 +50,20 @@ cd pdf-nmf
 
 ### Using `conda` / `mamba` (Recommended)
 
-Using **Conda** or **Mamba** (e.g. Miniforge or Anaconda) is strongly recommended for crystallography and DiffPy workflows, as C-libraries and dependencies like `diffpy.utils` are maintained on `conda-forge`.
+Using **Conda** or **Mamba** (e.g. Miniforge) is recommended for DiffPy workflows:
 
 #### Option A: Quick setup with `environment.yml`
 ```bash
-# Create the environment with all dependencies pre-configured
 conda env create -f environment.yml
-
-# Activate the environment
 conda activate pdf-nmf
 ```
 *(If using `mamba`, substitute `mamba env create -f environment.yml`)*
 
-#### Option B: Manual step-by-step setup
+#### Option B: Manual setup
 ```bash
-# 1. Create and activate a new environment
 conda create -n pdf-nmf python=3.10
 conda activate pdf-nmf
-
-# 2. Install scientific packages from conda-forge
-conda install -c conda-forge diffpy.utils scikit-learn matplotlib numpy
-
-# 3. Install pdf-nmf in editable mode
+conda install -c conda-forge diffpy.utils scikit-learn scipy matplotlib numpy
 pip install -e .
 ```
 
@@ -76,7 +71,7 @@ pip install -e .
 
 ### Using `pip`
 
-If you prefer standard `pip` without Conda (requires Python 3.9+):
+Requires Python 3.9+:
 
 1. **Create and activate a virtual environment:**
    - **Linux / macOS:**
@@ -94,24 +89,22 @@ If you prefer standard `pip` without Conda (requires Python 3.9+):
    ```bash
    pip install -e .
    ```
-   *(Alternatively, install requirements directly: `pip install -r requirements.txt`)*
+   *(Alternatively: `pip install -r requirements.txt`)*
 
 ---
 
 ## Quick Start
 
-Once installed, you can run `pdf-nmf` either using the installed CLI command or directly as a script:
-
 ### Using the CLI command (`pdf-nmf`):
 
 ```bash
-pdf-nmf --files data/*.gr --max_comp 5 --rmin 1.5 --rmax 20.0 --outdir results
+pdf-nmf --files data/*.gr --max_comp 5 --rmin 1.5 --rmax 20.0 --outdir results --norm l2
 ```
 
 ### Running the Python script directly:
 
 ```bash
-python nmf.py --files data/sample_01.gr data/sample_02.gr data/sample_03.gr --max_comp 4
+python nmf.py --files data/sample_01.gr data/sample_02.gr data/sample_03.gr --max_comp 4 --norm l2 --seeds 20
 ```
 
 ---
@@ -120,21 +113,24 @@ python nmf.py --files data/sample_01.gr data/sample_02.gr data/sample_03.gr --ma
 
 | Argument | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `--files` | `str` [list] | *(Required)* | One or more paths to PDF files (supports glob patterns e.g. `path/*.gr`). |
+| `--files` | `str` [list] | *(Required)* | Paths to PDF files (supports glob patterns e.g. `path/*.gr`). |
 | `--max_comp` | `int` | `6` | Maximum number of NMF components to calculate (from 1 to `max_comp`). |
-| `--rmin` | `float` | `None` | Minimum $r$-value (in Å) to include in the analysis. |
-| `--rmax` | `float` | `None` | Maximum $r$-value (in Å) to include in the analysis. |
-| `--outdir` | `str` | `nmf_results` | Target directory where all outputs and plots will be saved. |
+| `--rmin` | `float` | `None` | Minimum $r$-value (Å) to include. |
+| `--rmax` | `float` | `None` | Maximum $r$-value (Å) to include. |
+| `--outdir` | `str` | `nmf_results` | Output directory where all results, CSVs, and plots are saved. |
+| `--norm` | `str` | `l2` | Normalisation method: `l2` (unit $L_2$ norm, recommended), `max` (peak amplitude = 1), or `raw` (unnormalised v1 behavior). |
+| `--seeds` | `int` | `0` | If $> 0$, refits each model with $N$ random seeds to compute fraction uncertainties (std). |
+| `--no_show` | `flag` | `False` | Suppresses interactive plot popups (useful for headless / script runs). |
 
 ---
 
 ## Input Data Format
 
-Files provided to `--files` must be standard two-column ASCII text files (such as `.gr` files output by `PDFgetX3`, `PDFgetN3`, or `PDFgetX2`):
+Files provided to `--files` must be standard two-column ASCII text files (`.gr` files produced by `PDFgetX3`, `PDFgetN3`, etc.):
 - **Column 1**: Radial distance $r$ in Angstroms (Å).
 - **Column 2**: Pair distribution function $G(r)$.
-- Header lines beginning with `#` or text are automatically handled by the `diffpy.utils` parser.
-- All files in a given run must share the same $r$-grid spacing.
+- Header lines starting with `#` are automatically parsed.
+- **Important**: All files in a given run must share the same $r$-grid spacing.
 
 ---
 
@@ -145,16 +141,22 @@ Running the analysis produces the following directory layout in `--outdir`:
 ```text
 nmf_results/
 ├── reconstruction_errors.txt
-├── overview_reconstruction_and_components.png
+├── summary.png
+├── reconstruction_error_and_components.png
 ├── 1_components/
 │   ├── component_1.cgr
+│   ├── component_1_norm_l2.cgr
+│   ├── weights_1_components.csv
 │   ├── weights_1_components.tex
 │   └── reconstruction_plots_1c/
 │       ├── sample_01_recon.png
 │       └── ...
 ├── 2_components/
 │   ├── component_1.cgr
+│   ├── component_1_norm_l2.cgr
 │   ├── component_2.cgr
+│   ├── component_2_norm_l2.cgr
+│   ├── weights_2_components.csv
 │   ├── weights_2_components.tex
 │   └── reconstruction_plots_2c/
 │       └── ...
@@ -163,21 +165,65 @@ nmf_results/
 
 ### Description of Output Files
 
-- **`reconstruction_errors.txt`**: Tabulated Frobenius reconstruction error vs. number of components.
-- **`overview_reconstruction_and_components.png`**: Dual-panel overview with the error curve (elbow plot) and vertically stacked component profiles for `--max_comp`.
-- **`{n}_components/component_{i}.cgr`**: Extracted component $i$ exported with columns `r` and `G(r)`.
-- **`{n}_components/weights_{n}_components.tex`**: LaTeX table containing normalized fractional weights for each sample and the sample scaling factor.
-- **`reconstruction_plots_{n}c/{sample}_recon.png`**: Plot for each sample showing experimental data (circles), NMF reconstruction fit (red line), and the difference curve (green line offset below).
+- **`reconstruction_errors.txt`**: Tabulated component count, Frobenius norm, relative error in shifted space, and relative error in original $G(r)$ space.
+- **`summary.png`**: Dual-panel overview with relative error curve and stacked normalised components for `max_comp`.
+- **`{n}_components/component_{i}.cgr`**: Raw NMF component $i$ in shifted space ($r$ vs. $H_i(r)$).
+- **`{n}_components/component_{i}_norm_{norm}.cgr`**: Mean-removed, normalized component profile ($r$ vs. $\hat{G}_i(r)$).
+- **`{n}_components/weights_{n}_components.csv`**: Full machine-readable table with raw weights $W$, absolute weights $A$ for all normalisations, fractional weights $f$, sample offsets $d_i$, and seed stability standard deviations (if `--seeds > 0`).
+- **`{n}_components/weights_{n}_components.tex`**: LaTeX table reporting fractional weights $f_{ik}$ and total weight $\sum_k A_{ik}$ for the chosen `--norm`.
+- **`reconstruction_plots_{n}c/{sample}_recon.png`**: Rietveld-style plot showing experimental data, NMF reconstruction, and difference curve.
 
-### Mathematical Note on Shifts & Weights
+---
 
-1. **Non-negativity & Baseline Shift**: Because NMF requires positive values, data is shifted by:
-   $$\text{shift} = -\min(G_{\text{obs}}) \quad (\text{if } \min(G_{\text{obs}}) < 0)$$
-   Reconstruction for plotting transforms back via:
-   $$G_{\text{recon}} = W \times H - \text{shift}$$
-2. **Normalized Weights**: The matrix $W$ contains weights. The exported LaTeX table reports fractional weights normalized such that each row sums to 1:
-   $$w_{\text{frac}, ij} = \frac{W_{ij}}{\sum_{k} W_{ik}}$$
-   The overall row sum $\sum_{k} W_{ik}$ is reported as the **Scale Factor**.
+## Mathematical Framework (v2 Scaling & Interpretation)
+
+### 1. Baseline Shift
+NMF requires non-negative matrix elements ($V_{ij} \ge 0$). For a dataset of observed PDFs $G_i(r)$, a global constant shift is applied:
+$$\text{shift} = \max\left(0, -\min_{i, r} G_i(r)\right), \quad V_i(r) = G_i(r) + \text{shift}$$
+
+### 2. Factorization & Baseline Removal
+The shifted matrix is factorized as $V \approx W H$. Because of the global shift, each extracted component $H_k(r)$ carries a non-zero baseline:
+$$b_k = \langle H_k(r) \rangle_r$$
+We subtract this baseline to recover zero-mean, $G(r)$-like component curves:
+$$\tilde{H}_k(r) = H_k(r) - b_k$$
+
+### 3. Normalisation & Absolute Weights
+Components are normalised by scale factor $s_k$:
+$$\hat{G}_k(r) = \frac{\tilde{H}_k(r)}{s_k}$$
+where:
+- `--norm l2`: $s_k = \|\tilde{H}_k(r)\|_2 = \sqrt{\sum_r \tilde{H}_k(r)^2}$ (default)
+- `--norm max`: $s_k = \max_r |\tilde{H}_k(r)|$
+- `--norm raw`: $s_k = 1$ (reproduces v1 behavior)
+
+Absolute weights are scaled correspondingly:
+$$A_{ik} = W_{ik} \cdot s_k$$
+
+### 4. Exact Sample Reconstruction
+Each sample's original PDF is reconstructed as:
+$$G_i(r) = \sum_k A_{ik} \hat{G}_k(r) + d_i$$
+where $d_i = \sum_k W_{ik} b_k - \text{shift}$ is a constant offset per sample (approximately the sample's mean over the fitted $r$-range).
+
+### 5. Fractional Signal Shares & Physical Interpretation
+The fractional weights are defined as:
+$$f_{ik} = \frac{A_{ik}}{\sum_k A_{ik}}$$
+
+> **Important Scientific Note**:
+> The fractions $f_{ik}$ represent the **share of the total PDF signal** ($L_2$ norm) contributed by component $k$.
+> They are **not** identical to physical phase or mole fractions. Because total-scattering PDF amplitude scales with atomic scattering power and density, an end member with larger scattering amplitude contributes disproportionately to the signal.
+>
+> For a two-component mixture $(1 - x) G_A + x G_B$, the expected signal share is:
+> $$f_{\text{pred}, B}(x) = \frac{x \cdot s_B}{x \cdot s_B + (1 - x) \cdot s_A}$$
+> $f_{iB}$ equals the mixing fraction $x$ only if both end members share identical PDF signal amplitudes ($s_A = s_B$).
+
+---
+
+## Synthetic Mixture Validation
+
+The included script `nmf_validation.py` tests this behavior by creating synthetic mixtures of two measured end-member PDFs and comparing the recovered fractions against $x$ and $f_{\text{pred}}(x)$:
+
+```bash
+python nmf_validation.py --a path/to/end_member_A.gr --b path/to/end_member_B.gr --rmin 1.5 --rmax 6.5 --steps 11
+```
 
 ---
 
@@ -189,10 +235,9 @@ This implementation is based on the methodology published by Billinge and cowork
    > Liu, C.-H., Wright, C. J., Gu, R., Bandi, S., Wustrow, A., Todd, P. K., O'Nolan, D., Beauvais, M. L., Neilson, J. R., Chupas, P. J., Chapman, K. W. & Billinge, S. J. L. (2021).  
    > *Non-negative matrix factorization for pair distribution function analysis.*  
    > **J. Appl. Cryst.** 54, 768–775.  
-   > [DOI: 10.1107/S160057672100293X](https://doi.org/10.1107/S160057672100293X)
+   > [DOI: 10.1107/S160057672100265X](https://doi.org/10.1107/S160057672100265X)
 
-2. **Web Implementation & Peer-Reviewed Service**:
-   > For an interactive web application, visit [PDFitc.org](https://pdfitc.org).  
+2. **Web Implementation & Service**:
    > Thatcher, Z., Liu, C.-H., Yang, L., McBride, B. C., Thinh Tran, G., Wustrow, A., Karlsen, M. A., Neilson, J. R., Ravnsbaek, D. B. & Billinge, S. J. L. (2022).  
    > *PDFitc: a web-based tool center for pair distribution function analysis.*  
    > **Acta Cryst.** A78, 242–248.  
